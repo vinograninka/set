@@ -1,0 +1,980 @@
+<!doctype html><html lang="ru"><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Claude на своём сервере</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,600;0,800;1,500;1,700&family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: журнальный разворот — колонка с номером главы слева, текст ~65ch справа, иллюстрации-макеты во всю ширину */
+:root{
+  --paper:#F2F1EC; --paper-2:#E9E7E0; --ink:#15233A; --muted:#58637A; --rule:#D5D2C9;
+  --terra:#B4502B; --terra-soft:#F3E1D7; --blue:#23457C; --blue-soft:#E1E8F3; --card:#FBFAF7;
+  --f-display:"Playfair Display", "PT Serif", Georgia, serif;
+  --f-body:"Golos Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --f-mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  /* цвета макетов интерфейса: «скриншот», одинаковый в обеих темах */
+  --u-bg:#F4F3EF; --u-side:#EEEDE8; --u-line:#DDDBD4; --u-ink:#1E2430; --u-mut:#6D7382; --u-acc:#B4502B; --u-acc2:#23457C;
+  --u-bubble:#DCE5F2; --u-card:#E9E8E2; --u-white:#FFFFFF; --u-ok:#2F9E6A; --u-warn:#C2410C; --u-over:#7C7F86;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --paper:#0F141D; --paper-2:#161D29; --ink:#E7E4DC; --muted:#9AA3B4; --rule:#2A3344;
+  --terra:#E27C55; --terra-soft:#2E1F19; --blue:#93B3EA; --blue-soft:#18243A; --card:#141B26; color-scheme:dark }}
+:root[data-theme="dark"]{
+  --paper:#0F141D; --paper-2:#161D29; --ink:#E7E4DC; --muted:#9AA3B4; --rule:#2A3344;
+  --terra:#E27C55; --terra-soft:#2E1F19; --blue:#93B3EA; --blue-soft:#18243A; --card:#141B26; color-scheme:dark }
+
+*{box-sizing:border-box}
+body{background:var(--paper);color:var(--ink);font-family:var(--f-body);font-size:17px;line-height:1.62;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1140px;margin:0 auto;padding-inline:clamp(16px,4vw,40px);padding-block:0}
+a{color:var(--blue);text-underline-offset:3px}
+a:focus-visible,button:focus-visible{outline:2px solid var(--terra);outline-offset:3px;border-radius:4px}
+code{font-family:var(--f-mono);font-size:.84em;background:var(--blue-soft);color:var(--blue);padding:.1em .38em;border-radius:4px;white-space:nowrap}
+kbd{font-family:var(--f-mono);font-size:.8em;border:1px solid var(--rule);border-bottom-width:2px;border-radius:5px;padding:.05em .4em;background:var(--card)}
+h1,h2,h3{text-wrap:balance}
+p{margin:0}
+
+/* masthead */
+.mast{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;padding-block:22px;border-bottom:1px solid var(--ink);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.mast b{color:var(--ink);font-weight:700}
+.mast .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--terra);margin-right:8px;vertical-align:middle}
+
+/* hero */
+.hero{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:clamp(28px,5vw,72px);padding-block:clamp(40px,7vw,84px) clamp(36px,5vw,60px);border-bottom:1px solid var(--rule)}
+.kicker{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--terra);font-weight:600}
+.hero h1{font-family:var(--f-display);font-weight:800;font-size:clamp(40px,6.4vw,80px);line-height:.98;letter-spacing:-.02em;margin:16px 0 24px}
+.hero h1 em{font-style:italic;font-weight:500;color:var(--blue)}
+.lede{font-size:clamp(18px,2vw,21px);line-height:1.55;max-width:34em}
+.lede-note{margin-top:22px;color:var(--muted);font-size:15px;max-width:38em}
+.toc{align-self:end;border-top:3px solid var(--ink);padding-top:14px}
+.toc h2{font-size:12px;letter-spacing:.16em;text-transform:uppercase;margin:0 0 8px;font-weight:600;color:var(--muted)}
+.toc ol{list-style:none;margin:0;padding:0;counter-reset:t}
+.toc li{counter-increment:t;border-bottom:1px solid var(--rule)}
+.toc a{display:grid;grid-template-columns:2.2em 1fr;gap:6px;padding:8px 0;text-decoration:none;color:var(--ink);font-size:15px}
+.toc a::before{content:counter(t,decimal-leading-zero);font-family:var(--f-mono);font-size:12px;color:var(--terra);padding-top:3px}
+.toc a:hover span{color:var(--terra)}
+
+/* intro strip */
+.strip{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:clamp(20px,4vw,48px);padding-block:32px;border-bottom:1px solid var(--rule)}
+.strip p{font-size:15.5px;color:var(--muted)}
+.strip strong{display:block;color:var(--ink);font-family:var(--f-display);font-style:italic;font-weight:700;font-size:20px;margin-bottom:6px}
+
+/* chapters */
+.ch{display:grid;grid-template-columns:minmax(0,230px) minmax(0,1fr);gap:clamp(20px,4vw,56px);padding-block:clamp(48px,7vw,88px);border-bottom:1px solid var(--rule);scroll-margin-top:20px}
+.ch-head{position:relative}
+.ch-num{font-family:var(--f-display);font-style:italic;font-weight:700;font-size:clamp(64px,8vw,104px);line-height:.8;color:var(--terra)}
+.ch-tag{margin-top:14px;font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.ch-body{min-width:0;display:flex;flex-direction:column;gap:20px}
+.ch-body h2{font-family:var(--f-display);font-weight:800;font-size:clamp(30px,4vw,46px);line-height:1.05;letter-spacing:-.01em;margin:0}
+.ch-body h3{font-size:18px;font-weight:700;margin:12px 0 0}
+.ch-body > p, .ch-body > ul, .ch-body > ol, .ch-body > .note, .ch-body > h3{max-width:40em}
+.ch-lede{font-size:20px;line-height:1.5;color:var(--ink)}
+.ch-lede::first-letter{font-family:var(--f-display);font-weight:800;color:var(--blue);float:left;font-size:3.1em;line-height:.85;margin:.06em .1em 0 0}
+
+ul.plain{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:12px}
+ul.plain li{padding-left:22px;position:relative}
+ul.plain li::before{content:"";position:absolute;left:0;top:.72em;width:10px;height:2px;background:var(--terra)}
+ul.plain b{font-weight:700}
+
+ol.steps{margin:0;padding:0;list-style:none;counter-reset:s;display:flex;flex-direction:column;gap:12px}
+ol.steps li{counter-increment:s;display:grid;grid-template-columns:34px 1fr;gap:12px;align-items:start}
+ol.steps li::before{content:counter(s);display:grid;place-items:center;width:30px;height:30px;border-radius:50%;border:1.5px solid var(--blue);color:var(--blue);font-family:var(--f-mono);font-size:13px;font-weight:500}
+
+.note{border-left:3px solid var(--blue);background:var(--blue-soft);padding:14px 18px;border-radius:0 8px 8px 0;font-size:15.5px}
+.note.warn{border-color:var(--terra);background:var(--terra-soft)}
+.note .lbl{display:block;font-size:11px;letter-spacing:.16em;text-transform:uppercase;font-weight:700;color:var(--blue);margin-bottom:4px}
+.note.warn .lbl{color:var(--terra)}
+
+.pull{font-family:var(--f-display);font-style:italic;font-weight:500;font-size:clamp(22px,2.6vw,28px);line-height:1.3;color:var(--blue);border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);padding:18px 0;max-width:30em}
+
+/* modes & troubleshooting */
+.modes{display:flex;flex-direction:column;border-top:1px solid var(--rule);max-width:44em}
+.mode{display:grid;grid-template-columns:minmax(0,190px) minmax(0,1fr);gap:8px 20px;padding:14px 0;border-bottom:1px solid var(--rule)}
+.mode b{font-weight:700}
+.chip{display:inline-block;margin-top:6px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;padding:3px 8px;border-radius:999px;background:var(--blue-soft);color:var(--blue)}
+.chip.go{background:var(--blue);color:var(--paper)}
+.chip.no{background:var(--terra-soft);color:var(--terra)}
+.mode p{font-size:15.5px}
+
+.fix{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;max-width:none}
+.fix div{background:var(--card);border:1px solid var(--rule);border-radius:10px;padding:18px 20px;display:flex;flex-direction:column;gap:8px}
+.fix h3{margin:0;font-size:16.5px;color:var(--terra);font-weight:700}
+.fix p{font-size:15px}
+
+.loop{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:14px;max-width:44em}
+.loop span{border:1px solid var(--rule);background:var(--card);padding:6px 12px;border-radius:999px}
+.loop i{font-style:normal;color:var(--terra)}
+
+/* code */
+.code{position:relative;background:#1A2436;color:#E8E6DF;border-radius:10px;padding:18px 20px;font-family:var(--f-mono);font-size:14px;line-height:1.6;max-width:44em;overflow-x:auto}
+.code pre{margin:0;white-space:pre-wrap}
+.copy{position:absolute;top:10px;right:10px;font:500 12px var(--f-body);color:#E8E6DF;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);border-radius:6px;padding:4px 10px;cursor:pointer}
+.copy:hover{background:rgba(255,255,255,.16)}
+
+/* figures */
+figure{margin:8px 0 0}
+figcaption{margin-top:12px;font-size:13.5px;color:var(--muted);display:flex;gap:10px;max-width:46em}
+figcaption b{font-family:var(--f-mono);font-weight:500;color:var(--terra);white-space:nowrap}
+.shot{position:relative;overflow:auto;border-radius:12px;box-shadow:0 1px 0 var(--rule),0 18px 40px -24px rgba(20,30,50,.45);background:var(--u-bg)}
+.js .shot{overflow:hidden}
+.shot > .ui{transform-origin:0 0}
+
+/* ===== UI mockups ===== */
+.ui{font-family:var(--f-body);color:var(--u-ink);background:var(--u-bg);font-size:14px;line-height:1.45;position:relative}
+.ui svg.i{width:18px;height:18px;flex:none;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.ui .mono{font-family:var(--f-mono)}
+.u-app{display:grid;grid-template-columns:260px 1fr}
+.u-side{background:var(--u-side);border-right:1px solid var(--u-line);display:flex;flex-direction:column;padding:14px 12px;gap:10px;min-height:100%}
+.u-brand{display:flex;align-items:center;gap:10px}
+.u-logo{width:30px;height:30px;border-radius:8px;background:var(--u-acc);color:#fff;display:grid;place-items:center}
+.u-logo svg.i{width:17px;height:17px}
+.u-brand b{font-weight:700;font-size:16px;flex:1}
+.u-icons{display:flex;gap:10px;color:var(--u-mut)}
+.u-pill{display:inline-flex;gap:6px;align-items:center;border:1px solid var(--u-line);border-radius:6px;padding:2px 8px;font-size:12.5px;color:var(--u-mut);width:max-content}
+.u-seg{display:flex;align-items:center;gap:6px;background:var(--u-card);border-radius:8px;padding:3px;font-size:13px;color:var(--u-mut)}
+.u-seg span{display:flex;align-items:center;gap:6px;padding:5px 10px;border-radius:6px}
+.u-seg span.on{background:var(--u-white);color:var(--u-ink);box-shadow:0 1px 2px rgba(0,0,0,.06)}
+.u-seg svg.i{width:15px;height:15px}
+.u-search{display:flex;align-items:center;gap:8px;background:var(--u-card);border-radius:8px;padding:8px 10px;color:#9A9EA8;font-size:14px}
+.u-search .k{margin-left:auto;font-family:var(--f-mono);font-size:11px;border:1px solid var(--u-line);border-radius:4px;padding:1px 5px;color:var(--u-mut)}
+.u-proj{display:flex;gap:10px;align-items:center;padding:9px 8px;border-radius:8px}
+.u-proj.on{background:var(--u-card)}
+.u-proj .t{flex:1;min-width:0}
+.u-proj .t b{display:block;font-weight:500;font-size:15px}
+.u-proj .t small{color:var(--u-mut);font-size:12.5px}
+.u-proj svg.i{color:#A5A8B0}
+.u-new{margin-left:14px;background:var(--u-acc);color:#fff;border-radius:7px;padding:8px 14px;font-size:13px;font-weight:500;display:flex;gap:8px;align-items:center}
+.u-new svg.i{width:15px;height:15px}
+.u-sess{margin-left:14px;border:1px solid #E7C9BB;background:#FAF1EC;border-radius:7px;padding:8px 10px;display:flex;gap:8px;align-items:center;font-size:14px;position:relative}
+.u-sess::before{content:"";position:absolute;left:-12px;top:50%;width:7px;height:7px;border-radius:50%;background:var(--u-ok);transform:translateY(-50%)}
+.u-sess .n{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.u-sq{width:24px;height:24px;border-radius:6px;display:grid;place-items:center;border:1px solid var(--u-line);background:var(--u-white);color:var(--u-mut)}
+.u-sq.red{color:var(--u-warn)}
+.u-sq svg.i{width:14px;height:14px}
+.u-spark{width:18px;height:18px;border-radius:5px;background:var(--u-acc);display:grid;place-items:center;color:#fff;flex:none}
+.u-spark svg{width:12px;height:12px;stroke:#fff;stroke-width:2.2;fill:none;stroke-linecap:round}
+.u-foot{margin-top:auto;display:flex;flex-direction:column;gap:12px;font-size:14px;color:var(--u-mut);border-top:1px solid var(--u-line);padding-top:14px}
+.u-foot div{display:flex;gap:10px;align-items:center}
+.u-upd{color:var(--u-acc)!important;align-items:flex-start!important}
+.u-upd small{display:block;font-size:11.5px}
+.u-ver{font-size:10.5px;color:#A3A6AD;text-align:center}
+.u-main{display:flex;flex-direction:column;min-width:0}
+.u-top{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--u-line);background:var(--u-bg)}
+.u-top .tt{flex:1}
+.u-top .tt b{display:block;font-size:14.5px;font-weight:600}
+.u-top .tt small{font-size:12px;color:var(--u-mut)}
+.u-tabs{display:flex;gap:2px;background:var(--u-card);border-radius:8px;padding:3px;font-size:14px;color:var(--u-mut)}
+.u-tabs span{display:flex;gap:6px;align-items:center;padding:5px 11px;border-radius:6px}
+.u-tabs span.on{background:var(--u-white);color:var(--u-ink)}
+.u-tabs svg.i{width:15px;height:15px}
+.u-chat{flex:1;overflow:hidden;padding:22px 60px 16px 70px;display:flex;flex-direction:column;gap:16px}
+.u-me{align-self:flex-end;max-width:560px;background:var(--u-bubble);border-radius:14px;padding:12px 16px;position:relative}
+.u-me .meta,.u-cl .meta{display:flex;gap:8px;justify-content:flex-end;font-size:11px;color:var(--u-mut);margin-top:6px;align-items:center}
+.u-me::after{content:"U";position:absolute;right:-44px;bottom:0;width:30px;height:30px;border-radius:50%;background:var(--u-bubble);display:grid;place-items:center;font-size:13px}
+.u-who{display:flex;gap:10px;align-items:center;font-weight:500}
+.u-who .u-spark{width:24px;height:24px;border-radius:6px}
+.u-cl{background:var(--u-card);border-radius:14px;padding:14px 18px;display:block}
+.u-cl .meta{justify-content:flex-start}
+.u-cl ol{margin:8px 0;padding-left:20px;display:flex;flex-direction:column;gap:4px}
+.u-cl code,.u-pop code{font-family:var(--f-mono);font-size:12px;background:var(--u-white);padding:1px 5px;border-radius:4px;color:var(--u-ink);white-space:nowrap}
+.u-input{margin:0 40px 16px;border:1px solid var(--u-line);background:var(--u-white);border-radius:12px}
+.u-input.focus{border-color:#E3B7A3;box-shadow:0 0 0 3px rgba(180,80,43,.08)}
+.u-input .ph{padding:14px 18px;color:#9A9EA8;min-height:54px}
+.u-input .bar{display:flex;align-items:center;gap:10px;padding:8px 12px;border-top:1px solid #EEEDE8}
+.u-btn{display:flex;align-items:center;gap:6px;border:1px solid var(--u-line);border-radius:8px;padding:5px 10px;font-size:13px;background:var(--u-bg)}
+.u-btn .mut{color:var(--u-mut)}
+.u-badge{position:relative}
+.u-badge::after{content:"7";position:absolute;top:-8px;right:-8px;width:15px;height:15px;border-radius:50%;background:var(--u-warn);color:#fff;font-size:9.5px;display:grid;place-items:center}
+.u-send{width:40px;height:34px;border-radius:8px;background:var(--u-acc);color:#fff;display:grid;place-items:center}
+.u-send.dim{opacity:.55}
+.grow{flex:1}
+
+/* modal & popups */
+.u-over{background:var(--u-over);padding:40px 60px;display:grid;place-items:center}
+.u-modal{background:var(--u-white);border-radius:14px;width:100%;box-shadow:0 20px 50px rgba(0,0,0,.25)}
+.u-modal .hd{display:flex;align-items:center;gap:14px;padding:22px 28px;border-bottom:1px solid var(--u-line)}
+.u-modal .hd .ico{width:40px;height:40px;border-radius:10px;background:#F7E4DB;color:var(--u-acc);display:grid;place-items:center}
+.u-modal .hd b{font-size:22px;font-weight:700;flex:1}
+.u-stepper{display:flex;align-items:center;gap:12px;padding:22px 28px 6px;font-size:16px}
+.u-stepper .c{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-weight:600;background:var(--u-card);color:var(--u-mut)}
+.u-stepper .c.on{background:var(--u-acc);color:#fff}
+.u-stepper .ln{flex:1;height:3px;background:var(--u-card);border-radius:2px}
+.u-field{padding:16px 28px 0;display:flex;flex-direction:column;gap:8px}
+.u-field label{font-weight:500;font-size:15.5px}
+.u-field .row{display:flex;gap:10px}
+.u-field .inp{flex:1;border:1.5px solid var(--u-line);border-radius:8px;padding:11px 14px;font-size:16px}
+.u-field .inp.on{border-color:var(--u-acc);box-shadow:0 0 0 3px rgba(180,80,43,.1)}
+.u-field .inp.ph{color:#9A9EA8}
+.u-field .sq{width:48px;border:1px solid var(--u-line);border-radius:8px;display:grid;place-items:center;background:var(--u-bg)}
+.u-field small{color:var(--u-mut);font-size:13px}
+.u-modal .ft{display:flex;justify-content:space-between;padding:22px 28px;border-top:1px solid var(--u-line);margin-top:34px}
+.u-b1{border:1px solid var(--u-line);background:var(--u-bg);border-radius:8px;padding:10px 20px;font-size:15px}
+.u-b2{background:var(--u-acc);color:#fff;border-radius:8px;padding:10px 22px;font-size:15px;display:flex;gap:8px;align-items:center}
+
+.u-stage{padding:30px 60px 30px;min-height:100%;display:flex;flex-direction:column;justify-content:flex-end;gap:10px;background:var(--u-bg)}
+.u-pop{background:#FAF9F6;border:1px solid var(--u-line);border-radius:12px;box-shadow:0 12px 30px rgba(20,25,35,.12);padding:14px 16px}
+.u-pop .h{display:flex;justify-content:space-between;font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--u-mut);font-weight:600;margin-bottom:8px}
+.u-pop .h i{font-style:normal;border:1px solid var(--u-line);border-radius:4px;padding:0 6px;letter-spacing:0}
+.u-cmd{display:grid;grid-template-columns:34px 1fr;gap:12px;padding:8px 2px}
+.u-cmd .b{width:32px;height:32px;border-radius:7px;border:1px solid #EBC8B8;background:#FBEDE6;color:var(--u-acc);display:grid;place-items:center}
+.u-cmd .b.g{border-color:#BFE3D0;background:#EAF7F0;color:var(--u-ok)}
+.u-cmd b{font-family:var(--f-mono);font-weight:500;font-size:15px}
+.u-cmd .tag{font-size:11px;border:1px solid var(--u-line);background:var(--u-card);border-radius:4px;padding:1px 6px;margin-left:8px;color:var(--u-mut)}
+.u-cmd p{color:var(--u-mut);font-size:13.5px}
+.u-modes{width:430px;align-self:flex-end;margin-right:120px}
+.u-mode{display:grid;grid-template-columns:26px 1fr 16px;gap:8px;padding:8px 2px}
+.u-mode b{font-weight:500;font-size:15px}
+.u-mode p{color:var(--u-mut);font-size:13px}
+.u-mode .o{color:var(--u-acc)} .u-mode .g{color:var(--u-ok)} .u-mode .b2{color:var(--u-acc2)}
+
+/* files */
+.u-files{display:grid;grid-template-columns:1fr 1fr;min-height:0;flex:1}
+.u-fl{border-right:1px solid var(--u-line);padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+.u-fl .tb{display:flex;align-items:center;gap:12px;color:var(--u-mut)}
+.u-fl .tb b{flex:1;color:var(--u-ink);font-weight:600;font-size:15px}
+.u-fl .tb .act{background:var(--u-acc);color:#fff;border-radius:6px;padding:4px}
+.u-tbl{font-size:13.5px}
+.u-tbl .r{display:grid;grid-template-columns:1.4fr .5fr .8fr .7fr;gap:6px;padding:6px 6px;border-bottom:1px solid #ECEBE6;align-items:center}
+.u-tbl .r.h{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--u-mut)}
+.u-tbl .nm{display:flex;gap:6px;align-items:center}
+.u-tbl .mono{font-size:12px;color:var(--u-mut)}
+.u-tbl .r.sel{background:var(--u-card)}
+.u-ed{display:flex;flex-direction:column}
+.u-ed .eh{display:flex;align-items:flex-start;gap:12px;padding:10px 14px;border-bottom:1px solid var(--u-line);color:var(--u-mut)}
+.u-ed .eh div{flex:1;color:var(--u-ink)}
+.u-ed .eh small{display:block;color:var(--u-mut);font-size:11.5px;font-family:var(--f-mono)}
+.u-code{background:#fff;flex:1;display:grid;grid-template-columns:40px 1fr;font-family:var(--f-mono);font-size:12px;line-height:1.75}
+.u-code .ln{background:#F5F4F1;color:#A3A6AD;text-align:right;padding:10px 8px 0 0;border-right:1px solid #ECEBE6}
+.u-code .tx{padding:10px 10px 0;white-space:pre;overflow:hidden}
+.u-code .hd{color:var(--u-acc2);font-weight:500}
+.u-status{display:flex;justify-content:space-between;font-size:11.5px;color:var(--u-mut);padding:6px 12px;border-top:1px solid var(--u-line);background:#F5F4F1}
+
+/* settings */
+.u-set{background:var(--u-bg);border-radius:14px;border:1px solid var(--u-line);margin:18px;overflow:hidden}
+.u-set .top{display:flex;justify-content:space-between;align-items:center;padding:18px 26px;border-bottom:1px solid var(--u-line);font-size:19px;font-weight:600}
+.u-set .body{display:grid;grid-template-columns:230px 1fr}
+.u-nav{border-right:1px solid var(--u-line);padding:14px 10px;display:flex;flex-direction:column;gap:2px;font-size:15px}
+.u-nav span{display:flex;gap:12px;align-items:center;padding:9px 12px;border-radius:8px;color:#4A505C}
+.u-nav span.on{background:var(--u-card);color:var(--u-ink);font-weight:500}
+.u-pane{padding:0}
+.u-agents{display:flex;gap:4px;margin:14px 20px;background:var(--u-card);border-radius:10px;padding:4px;width:max-content;font-size:15px;color:#4A505C}
+.u-agents span{display:flex;gap:8px;align-items:center;padding:7px 14px;border-radius:7px}
+.u-agents span.on{background:var(--u-white);color:var(--u-ink)}
+.u-agents i{width:16px;height:16px;border-radius:4px;display:inline-block}
+.u-sub{display:flex;gap:28px;padding:0 26px;border-bottom:1px solid var(--u-line);font-size:15px;color:#4A505C}
+.u-sub span{padding:10px 0}
+.u-sub span.on{color:var(--u-acc);border-bottom:2px solid var(--u-acc)}
+.u-sec{padding:18px 26px;display:flex;flex-direction:column;gap:14px}
+.u-sec .ttl{display:flex;gap:12px;align-items:flex-start}
+.u-sec .ttl .bx{width:40px;height:40px;border:1px solid var(--u-line);border-radius:9px;display:grid;place-items:center;color:var(--u-mut)}
+.u-sec .ttl b{font-size:19px;font-weight:600;display:block}
+.u-sec .ttl p{color:var(--u-mut);font-size:13.5px}
+.u-sec .row{display:flex;gap:10px}
+.u-sec .row .s{flex:1;border:1px solid var(--u-line);border-radius:8px;padding:8px 12px;color:#9A9EA8;display:flex;gap:8px;align-items:center;background:#FAF9F6}
+.u-sec .grp{display:flex;align-items:center;gap:10px;font-size:12px;letter-spacing:.14em;color:var(--u-mut)}
+.u-sec .grp i{font-style:normal;letter-spacing:0;font-size:13px;color:var(--u-acc);background:#F9E5DB;border:1px solid #EFC6B3;border-radius:999px;padding:3px 12px;font-weight:600}
+.u-skill{border:1px solid var(--u-line);border-radius:10px;padding:16px 18px;width:330px;background:#FAF9F6;display:flex;flex-direction:column;gap:8px}
+.u-skill b{font-family:var(--f-mono);font-weight:500;font-size:15px}
+.u-skill .mut{color:var(--u-mut);font-size:13.5px}
+.u-skill .p{border:1px solid var(--u-line);border-radius:999px;padding:2px 10px;font-size:12.5px;width:max-content;font-weight:500}
+.u-skill .src{border:1px solid var(--u-line);border-radius:8px;padding:8px 10px;font-family:var(--f-mono);font-size:11.5px;background:var(--u-bg)}
+.u-skill .src small{display:block;letter-spacing:.14em;color:var(--u-mut);font-size:10px;margin-bottom:2px}
+.u-danger{border:1px solid #F0D2B8;background:#FDF4EA;border-radius:10px;padding:14px 16px;display:flex;gap:14px;align-items:flex-start}
+.u-danger .cb{width:18px;height:18px;border:1.5px solid #9A9EA8;border-radius:4px;background:#fff;margin-top:3px;flex:none}
+.u-danger b{color:#8A2E12;font-weight:600;font-size:15.5px;display:block}
+.u-danger small{color:var(--u-warn);font-size:13px}
+.u-tools{display:flex;flex-wrap:wrap;gap:8px}
+.u-tools span{border:1px solid var(--u-line);background:#FAF9F6;border-radius:8px;padding:6px 12px;font-size:13.5px}
+.u-plus{width:52px;background:#E2A48A;color:#fff;border-radius:8px;display:grid;place-items:center}
+
+/* mobile */
+.u-phones{display:grid;grid-template-columns:repeat(3,1fr);gap:28px;padding:30px;background:var(--u-bg)}
+.u-ph{border:1px solid var(--u-line);border-radius:26px;background:#FAF9F6;height:560px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 8px 24px rgba(20,25,35,.08)}
+.u-ph .bar{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--u-line)}
+.u-ph .empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:20px;text-align:center}
+.u-ph .empty .f{width:54px;height:54px;border-radius:12px;background:var(--u-card);display:grid;place-items:center;color:var(--u-mut)}
+.u-ph .empty b{font-size:18px}
+.u-ph .empty p{font-size:13px;color:var(--u-mut)}
+.u-ph .tip{background:#F7E6DE;border:1px solid #EDCAB9;color:var(--u-acc);border-radius:10px;padding:10px 12px;font-size:12.5px}
+.u-ph .side{padding:12px;display:flex;flex-direction:column;gap:9px;flex:1}
+.u-ph .card{border:1px solid var(--u-line);border-radius:10px;padding:8px 10px;display:flex;align-items:center;gap:8px;background:#fff}
+.u-ph .card .t{flex:1}
+.u-ph .card small{display:block;color:var(--u-mut);font-size:11px}
+.u-ph .chatm{flex:1;padding:12px;display:flex;flex-direction:column;gap:10px;font-size:12.5px}
+.u-ph .u-me{max-width:88%;padding:9px 12px}
+.u-ph .u-me::after{display:none}
+.u-ph .u-cl{padding:10px 12px}
+.u-ph .in{margin:0 10px 10px;border:1px solid var(--u-line);border-radius:10px;background:#fff;font-size:12px;color:#9A9EA8}
+.u-ph .in .ph{padding:10px 12px}
+.u-ph .in .bar2{display:flex;gap:6px;align-items:center;padding:6px 8px;border-top:1px solid #EEEDE8}
+
+/* footer */
+.colophon{display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;padding-block:36px 56px;color:var(--muted);font-size:13.5px}
+.colophon b{font-family:var(--f-display);font-style:italic;color:var(--ink);font-size:17px}
+
+@media (max-width:820px){
+  .hero,.strip{grid-template-columns:1fr}
+  .ch{grid-template-columns:1fr;gap:18px}
+  .ch-head{display:flex;align-items:baseline;gap:16px}
+  .ch-tag{margin:0}
+  .fix{grid-template-columns:1fr}
+  .mode{grid-template-columns:1fr}
+  body{font-size:16px}
+  .ch-lede{font-size:18px}
+}
+@media (prefers-reduced-motion:no-preference){
+  .toc a span{transition:color .15s}
+}
+
+/* ===== install guide additions ===== */
+.route{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));border-top:3px solid var(--ink);margin-top:8px}
+.route a{display:flex;flex-direction:column;gap:6px;padding:14px 14px 16px 0;text-decoration:none;color:var(--ink);border-right:1px solid var(--rule);margin-right:14px}
+.route a:last-child{border-right:0}
+.route a span:first-child{font-family:var(--f-mono);font-size:12px;color:var(--terra)}
+.route a b{font-weight:600;font-size:15px;line-height:1.3}
+.route a small{color:var(--muted);font-size:13px;line-height:1.35}
+.route a:hover b{color:var(--terra)}
+
+.need{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;max-width:none}
+.need div{border-top:2px solid var(--blue);padding-top:10px;font-size:15px}
+.need b{display:block;font-family:var(--f-display);font-weight:700;font-size:19px;margin-bottom:4px}
+
+.stamp{display:grid;grid-template-columns:44px 1fr;gap:14px;align-items:center;border:1px solid var(--rule);background:var(--card);border-radius:12px;padding:14px 18px;max-width:40em}
+.stamp .ok{width:40px;height:40px;border-radius:50%;border:2px solid var(--blue);display:grid;place-items:center;color:var(--blue)}
+.stamp .ok svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+.stamp .lbl{display:block;font-size:11px;letter-spacing:.16em;text-transform:uppercase;font-weight:700;color:var(--blue)}
+.stamp p{font-size:15.5px}
+
+.cmd{position:relative;background:#1A2436;color:#E8E6DF;border-radius:10px;padding:14px 110px 14px 18px;font-family:var(--f-mono);font-size:14px;line-height:1.6;max-width:44em;overflow-x:auto}
+.cmd pre{margin:0;white-space:pre-wrap;word-break:break-word}
+.cmd .os{display:block;font-family:var(--f-body);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#9DB4DC;margin-bottom:4px}
+.cmd .fill{color:#F2B49A}
+.cmd .copy{top:12px}
+
+.prompt{max-width:46em;border:1px solid var(--rule);background:var(--card);border-radius:12px;overflow:hidden}
+.prompt .ph{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid var(--rule);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.prompt .ph button{font:600 13px var(--f-body);letter-spacing:0;text-transform:none;color:var(--paper);background:var(--blue);border:0;border-radius:6px;padding:6px 12px;cursor:pointer}
+.prompt pre{margin:0;padding:16px 18px;font-family:var(--f-mono);font-size:13.5px;line-height:1.65;white-space:pre-wrap;color:var(--ink)}
+
+.tariffs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;max-width:34em}
+.tariffs div{border:1px solid var(--rule);border-radius:10px;padding:14px 16px;background:var(--card)}
+.tariffs b{display:block;font-size:14px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.tariffs span{font-family:var(--f-display);font-weight:800;font-size:32px;font-variant-numeric:tabular-nums}
+.tariffs small{color:var(--muted);font-size:14px}
+
+/* note form */
+.memo{max-width:46em;border:1.5px solid var(--ink);border-radius:14px;background:var(--card);overflow:hidden}
+.memo-h{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 20px;border-bottom:1px solid var(--rule)}
+.memo-h b{font-family:var(--f-display);font-style:italic;font-size:22px;font-weight:700}
+.memo-h .btns{display:flex;gap:8px;flex-wrap:wrap}
+.btn{font:600 13.5px var(--f-body);border-radius:8px;padding:8px 14px;cursor:pointer;border:1px solid var(--rule);background:var(--paper);color:var(--ink)}
+.btn.pri{background:var(--terra);border-color:var(--terra);color:#fff}
+.memo-g{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 18px;padding:18px 20px}
+.memo-g .full{grid-column:1/-1}
+.memo-g label{display:flex;flex-direction:column;gap:5px;font-size:12.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600;min-width:0}
+.memo-g input,.memo-g textarea{font:15px var(--f-mono);color:var(--ink);background:var(--paper);border:1px solid var(--rule);border-radius:8px;padding:9px 11px;width:100%;letter-spacing:0;text-transform:none}
+.memo-g textarea{min-height:64px;resize:vertical;font-size:13px}
+.memo-g input:focus,.memo-g textarea:focus{outline:2px solid var(--blue);outline-offset:1px}
+.memo-g .check{flex-direction:row;align-items:center;gap:10px;text-transform:none;letter-spacing:0;font-size:15px;color:var(--ink);font-weight:500}
+.memo-g .check input{width:18px;height:18px;accent-color:var(--blue)}
+.memo-g .pw{grid-column:1/-1;font-size:14px;color:var(--muted);border-top:1px dashed var(--rule);padding-top:12px}
+.memo-f{padding:12px 20px;border-top:1px solid var(--rule);font-size:13.5px;color:var(--muted);background:var(--terra-soft)}
+.memo-f b{color:var(--terra)}
+
+/* diagrams (theme-aware) */
+.flow{display:flex;flex-wrap:nowrap;align-items:stretch;gap:0;max-width:none;overflow-x:auto;padding:4px 0}
+.node{border:1.5px solid var(--ink);border-radius:10px;padding:12px 14px;background:var(--card);display:flex;flex-direction:column;gap:3px;min-width:0;flex:1 1 0;min-width:112px}
+.node b{font-size:15px;font-weight:700}
+.node small{font-family:var(--f-mono);font-size:12px;color:var(--muted)}
+.node.hl{border-color:var(--terra);background:var(--terra-soft)}
+.node.bl{border-color:var(--blue);background:var(--blue-soft)}
+.node.off{border-style:dashed;border-color:var(--muted);opacity:.85}
+.arr{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 6px;min-width:50px;color:var(--terra);font-size:11px;font-family:var(--f-mono);text-align:center;gap:2px}
+.arr i{font-style:normal;font-size:20px;line-height:1}
+.arr i::before{content:"→"}
+.diagram{border:1px solid var(--rule);border-radius:14px;padding:20px;background:var(--paper-2);display:flex;flex-direction:column;gap:14px}
+.diagram .cap{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.ports{display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:14px}
+.port{font-family:var(--f-mono);font-size:13px;border-radius:999px;padding:4px 12px;border:1px solid var(--blue);color:var(--blue);background:var(--blue-soft)}
+.port.x{border-color:var(--terra);color:var(--terra);background:var(--terra-soft);text-decoration:line-through}
+
+/* terminal */
+.term{background:#121A28;border-radius:12px;overflow:hidden;max-width:46em;box-shadow:0 18px 40px -24px rgba(10,20,40,.6)}
+.term .tb{display:flex;gap:7px;align-items:center;padding:10px 14px;background:#1C2638;color:#8C9AB3;font:12px var(--f-body)}
+.term .tb i{width:11px;height:11px;border-radius:50%;background:#3A4760;display:inline-block}
+.term .tb span{margin-left:10px}
+.term pre{margin:0;padding:14px 18px 18px;font-family:var(--f-mono);font-size:13.5px;line-height:1.7;color:#D9DEE8;white-space:pre-wrap;word-break:break-word}
+.term .p{color:#8FD3A8}
+.term .y{color:#F2B49A}
+.term .m{color:#7F8BA3}
+
+/* ui: dns editor, onboarding, quick settings */
+.u-dns{padding:26px 30px;background:var(--u-bg)}
+.u-dns .top{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+.u-dns .top b{font-size:18px;flex:1}
+.u-dns .top b em{font-style:normal;color:var(--u-acc2)}
+.u-dns .tabs{display:flex;gap:26px;border-bottom:1px solid var(--u-line);font-size:14px;color:var(--u-mut);padding:0 6px}
+.u-dns .tabs span{padding:8px 0}
+.u-dns .tabs span.on{color:var(--u-ink);border-bottom:2px solid var(--u-acc2);font-weight:600}
+.u-dns .r{display:grid;grid-template-columns:30px 90px 1fr 1.2fr 80px 30px;gap:10px;padding:12px 6px;border-bottom:1px solid #E6E4DE;font-size:14px;align-items:center}
+.u-dns .r.h{font-size:11.5px;color:var(--u-mut);letter-spacing:.06em;text-transform:uppercase}
+.u-dns .r.hl{background:#FBEFE8;border-radius:8px;border-bottom-color:transparent;box-shadow:inset 0 0 0 1.5px #E3B7A3}
+.u-dns .cb{width:16px;height:16px;border:1.5px solid #B9BCC4;border-radius:4px;background:#fff}
+.u-dns .ty{font-family:var(--f-mono);font-weight:500}
+.u-dns .ip{font-family:var(--f-mono)}
+.u-dns .del{color:#9A9EA8;text-decoration:line-through}
+.u-add{background:var(--u-acc2);color:#fff;border-radius:8px;padding:8px 14px;font-size:14px;display:flex;gap:6px;align-items:center}
+
+.u-onb{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;padding:28px;background:#EDEBE5}
+.u-step{display:flex;flex-direction:column;align-items:center;gap:10px}
+.u-step .n{width:30px;height:30px;border-radius:50%;background:var(--u-acc);color:#fff;display:grid;place-items:center;font-weight:600}
+.u-step .t{font-weight:600;font-size:14px}
+.u-card2{background:#fff;border:1px solid var(--u-line);border-radius:14px;padding:18px;width:100%;display:flex;flex-direction:column;gap:10px;min-height:400px}
+.u-card2 h4{margin:0;text-align:center;font-size:18px}
+.u-card2 .sub{text-align:center;font-size:12px;color:var(--u-mut)}
+.u-card2 .ic{width:40px;height:40px;border-radius:10px;background:#F7E4DB;color:var(--u-acc);display:grid;place-items:center;align-self:center}
+.u-card2 .f{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:500}
+.u-card2 .f span{border:1px solid var(--u-line);border-radius:7px;padding:8px 10px;color:#9A9EA8;font-weight:400;font-size:12.5px}
+.u-card2 .go{margin-top:auto;background:var(--u-acc);color:#fff;border-radius:8px;padding:10px;text-align:center;font-size:13.5px;font-weight:500}
+.u-card2 .nav{margin-top:auto;display:flex;justify-content:space-between}
+.u-card2 .nav span{border:1px solid var(--u-line);border-radius:7px;padding:7px 12px;font-size:12.5px}
+.u-card2 .nav span.a{background:var(--u-acc);color:#fff;border-color:var(--u-acc)}
+.u-card2 .nav span.g{background:var(--u-ok);color:#fff;border-color:var(--u-ok)}
+.u-prog{display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--u-mut)}
+.u-prog i{width:18px;height:18px;border-radius:50%;background:var(--u-card);display:grid;place-items:center;font-style:normal;font-size:10px}
+.u-prog i.on{background:var(--u-acc);color:#fff}
+.u-prog i.done{background:var(--u-ok);color:#fff}
+.u-prog s{flex:1;height:2px;background:var(--u-card);text-decoration:none}
+.u-ag{display:flex;align-items:center;gap:10px;border:1px solid var(--u-line);border-radius:8px;padding:8px 10px;font-size:13px}
+.u-ag.on{border-color:#BFE3D0;background:#EFF8F3}
+.u-ag i{width:18px;height:18px;border-radius:5px;display:inline-block;flex:none}
+.u-ag span{flex:1}
+.u-ag em{font-style:normal;font-size:11.5px;border-radius:6px;padding:3px 9px;border:1px solid var(--u-line);color:var(--u-mut)}
+.u-ag.on em{background:var(--u-ok);border-color:var(--u-ok);color:#fff}
+
+.u-qs{padding:30px;background:#E7E5DF;display:flex;justify-content:center}
+.u-qs .pnl{background:#FAF9F6;border:1px solid var(--u-line);border-radius:16px;width:380px;padding:22px;display:flex;flex-direction:column;gap:16px;box-shadow:0 12px 30px rgba(20,25,35,.1)}
+.u-qs h4{margin:0;font-size:17px;letter-spacing:.06em;display:flex;gap:10px;align-items:center}
+.u-qs .sec{font-size:11.5px;letter-spacing:.14em;color:var(--u-mut);font-weight:600}
+.u-qs .row{display:flex;align-items:center;gap:12px;border:1px solid var(--u-line);background:#fff;border-radius:10px;padding:12px 14px;font-size:14.5px}
+.u-qs .row span{flex:1}
+.u-qs .tg{width:40px;height:22px;border-radius:999px;background:#D6D4CD;position:relative}
+.u-qs .tg::after{content:"";position:absolute;left:3px;top:3px;width:16px;height:16px;border-radius:50%;background:#fff}
+.u-qs .sel{border:1.5px solid var(--u-acc2);border-radius:8px;padding:5px 10px;display:flex;gap:8px;align-items:center;font-size:14px;color:var(--u-acc2);font-weight:500}
+.u-qs .tab{position:absolute;right:0;top:50%;transform:translateY(-50%);width:26px;height:56px;border-radius:8px 0 0 8px;background:#fff;border:1px solid var(--u-line);display:grid;place-items:center;color:var(--u-mut)}
+
+.crosslink{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:20px;align-items:center;border:1.5px solid var(--blue);border-radius:14px;padding:22px 24px;background:var(--blue-soft);max-width:46em;text-decoration:none;color:var(--ink)}
+.crosslink small{display:block;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--blue);font-weight:700;margin-bottom:4px}
+.crosslink b{font-family:var(--f-display);font-size:24px;font-weight:800;line-height:1.15}
+.crosslink span.go{font-size:30px;color:var(--terra)}
+.crosslink:hover b{color:var(--blue)}
+.rules{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;max-width:none}
+.rules div{border-top:3px solid var(--terra);padding-top:10px;font-size:15px}
+.rules b{display:block;font-family:var(--f-mono);color:var(--terra);font-size:12px;margin-bottom:4px}
+
+@media (max-width:820px){
+  .route{grid-template-columns:1fr 1fr}
+  .route a{border-right:0;border-bottom:1px solid var(--rule);margin-right:0}
+  .need,.rules,.tariffs,.memo-g{grid-template-columns:1fr}
+  .flow{flex-direction:column}
+  .arr{min-height:44px;flex-direction:row;padding:4px 0}
+  .arr i::before{content:"↓"}
+  .cmd{padding-right:18px;padding-top:44px}
+  .crosslink{grid-template-columns:1fr}
+}
+
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></symbol>
+  <symbol id="i-term" viewBox="0 0 24 24"><path d="M5 7l5 5-5 5M12 18h7"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 6h6l2 2h10v11H3z"/></symbol>
+  <symbol id="i-git" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="8" r="2"/><path d="M6 8v8M18 10c0 4-6 3-10 7"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14-5l-2 2M4 13a8 8 0 0 0 14 5l2-2M4 4v4h4M20 20v-4h-4"/></symbol>
+  <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M15 10l-2 2 2 2"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/></symbol>
+  <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M4 20l1-4L16 5l3 3L8 19zM14 7l3 3"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></symbol>
+  <symbol id="i-clip" viewBox="0 0 24 24"><path d="M20 11l-8 8a5 5 0 0 1-7-7l8-8a3.5 3.5 0 0 1 5 5l-8 8a2 2 0 0 1-3-3l7-7"/></symbol>
+  <symbol id="i-hand" viewBox="0 0 24 24"><path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V12M11 11V4a1.5 1.5 0 0 1 3 0v7M14 11V5.5a1.5 1.5 0 0 1 3 0V13M17 9.5a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-2a6 6 0 0 1-5-3l-3-5a1.5 1.5 0 0 1 2.5-1.6L8 14"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M4 12l16-8-6 16-2-7z"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/></symbol>
+  <symbol id="i-bug" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="13" rx="5"/><path d="M12 7v13M4 12h3M17 12h3M5 18l2-1M19 18l-2-1M5 6l2 2M19 6l-2 2"/></symbol>
+  <symbol id="i-group" viewBox="0 0 24 24"><path d="M5 7h14l1 9-3 2-2-2H9l-2 2-3-2z"/><circle cx="9.5" cy="11.5" r="1"/><circle cx="14.5" cy="11.5" r="1"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></symbol>
+  <symbol id="i-cr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+  <symbol id="i-cd" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+  <symbol id="i-cl" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M4 16v4h16v-4"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v12M7 11l5 5 5-5M4 16v4h16v-4"/></symbol>
+  <symbol id="i-fileplus" viewBox="0 0 24 24"><path d="M14 3H6v18h12V7zM14 3v4h4M12 11v6M9 14h6"/></symbol>
+  <symbol id="i-folderplus" viewBox="0 0 24 24"><path d="M3 6h6l2 2h10v11H3zM12 11v5M9.5 13.5h5"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-save" viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5zM8 4v5h7M8 20v-6h8v6"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+  <symbol id="i-pulse" viewBox="0 0 24 24"><path d="M3 12h4l2-6 4 12 2-6h6"/></symbol>
+  <symbol id="i-archive" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="4"/><path d="M5 8v12h14V8M10 12h4"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/></symbol>
+  <symbol id="i-robot" viewBox="0 0 24 24"><rect x="4" y="8" width="16" height="11" rx="2"/><path d="M12 4v4M9 13v1M15 13v1M2 13h2M20 13h2"/></symbol>
+  <symbol id="i-palette" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18c1.5 0 2-1 2-2s-1-2 0-3h3a4 4 0 0 0 4-4c0-5-4-9-9-9z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7" r="1"/><circle cx="15" cy="7.5" r="1"/></symbol>
+  <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M16 7l3 3"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M4 6l1.5 1.5L8 5M4 12l1.5 1.5L8 11M11 6h9M11 12h9M11 18h9M4 18h4"/></symbol>
+  <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4M10 8l3 2-3 2z"/></symbol>
+  <symbol id="i-puzzle" viewBox="0 0 24 24"><path d="M9 4h4v2a2 2 0 0 0 4 0V4h3v6h-2a2 2 0 0 0 0 4h2v6h-6v-2a2 2 0 0 0-4 0v2H4v-6h2a2 2 0 0 0 0-4H4V4z"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 21h4"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-4 8-8 9-4-1-8-4-8-9V6z"/></symbol>
+  <symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 3l10 18H2zM12 10v5M12 18v.5"/></symbol>
+  <symbol id="i-smile" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2 4 2 4-2 4-2M9 9.5v.5M15 9.5v.5"/></symbol>
+  <symbol id="i-clipb" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 3h6v3H9zM9 11h6M9 15h6"/></symbol>
+  <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M3 5h7a2 2 0 0 1 2 2v13a2 2 0 0 0-2-2H3zM21 5h-7a2 2 0 0 0-2 2v13a2 2 0 0 1 2-2h7z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></symbol>
+  <symbol id="i-fileicon" viewBox="0 0 24 24"><path d="M14 3H6v18h12V7zM14 3v4h4M9 13l-2 2 2 2M15 13l2 2-2 2"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16M4 15h16M10 10v10"/></symbol>
+  <symbol id="i-ext" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-8 8M18 14v6H4V6h6"/></symbol>
+  <symbol id="i-max" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></symbol>
+  <symbol id="i-spk" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6L5.6 18.4"/></symbol>
+</svg>
+
+<div class="wrap">
+
+<header class="mast">
+  <span><span class="dot"></span><b>CloudCLI</b> · путеводитель для команды · часть I</span>
+  <span>Установка · около часа</span>
+</header>
+
+<section class="hero">
+  <div>
+    <div class="kicker">Установка Claude на свой сервер</div>
+    <h1>Свой Claude в Европе. <em>От ключа до панели</em></h1>
+    <p class="lede">В этой инструкции Вы арендуете небольшой сервер в Дании, привяжете к нему домен и поставите Claude Code. Сверху будет веб-панель, которая открывается с телефона и ноутбука. Техническую часть настройки Claude сделает сам, от Вас нужны аккуратность и примерно час времени.</p>
+    <p class="lede-note">Цены и условия проверены на 30 сентября 2026 года. Все примеры (пользователь <code>ivan</code>, домен <code>claude.zerno-i-par.ru</code>, IP <code>185.12.34.56</code>) условные и относятся к выдуманной кофейне «Зерно и пар». Подставляйте свои данные.</p>
+  </div>
+  <nav class="toc" aria-label="Содержание">
+    <h2>Маршрут</h2>
+    <ol>
+      <li><a href="#start"><span>Что понадобится и рабочая заметка</span></a></li>
+      <li><a href="#key"><span>SSH-ключ</span></a></li>
+      <li><a href="#server"><span>Сервер и домен</span></a></li>
+      <li><a href="#ssh"><span>Вход на сервер по SSH</span></a></li>
+      <li><a href="#code"><span>Claude Code: установка и вход</span></a></li>
+      <li><a href="#panel"><span>CloudCLI и HTTPS</span></a></li>
+      <li><a href="#finish"><span>Финиш и правила безопасности</span></a></li>
+    </ol>
+  </nav>
+</section>
+
+<nav class="route" aria-label="Этапы">
+  <a href="#key"><span>01</span><b>SSH-ключ</b><small>Пропуск к серверу</small></a>
+  <a href="#server"><span>02</span><b>Сервер и домен</b><small>IP проверен, DNS настроен</small></a>
+  <a href="#ssh"><span>03</span><b>Вход по SSH</b><small>Терминал на сервере</small></a>
+  <a href="#code"><span>04</span><b>Claude Code</b><small>Установлен и авторизован</small></a>
+  <a href="#panel"><span>05</span><b>CloudCLI + HTTPS</b><small>Панель в браузере</small></a>
+</nav>
+
+<!-- 00 -->
+<section class="ch" id="start">
+  <div class="ch-head"><div class="ch-num">00</div><div class="ch-tag">Перед стартом</div></div>
+  <div class="ch-body">
+    <h2>Три вещи, без которых не начать</h2>
+    <div class="need">
+      <div><b>Claude Pro</b>Или любая подписка выше. Бесплатного аккаунта для Claude Code не хватит.</div>
+      <div><b>Банковская карта</b>Для оплаты сервера и домена.</div>
+      <div><b>VPN на пять минут</b>Понадобится только при входе в Claude Code. Сама панель потом обычно открывается без VPN.</div>
+    </div>
+    <h3>Рабочая заметка</h3>
+    <p>По ходу установки накопится десяток адресов и имён. Записывайте их сюда: поля сохраняются только в этом браузере и никуда не отправляются. Кнопка «Скопировать» соберёт всё в текст для Ваших заметок. Из этих полей страница сама подставит данные в команды ниже.</p>
+    <form class="memo" id="memo" autocomplete="off">
+      <div class="memo-h"><b>Сервер для Claude</b><div class="btns"><button type="button" class="btn pri" id="memo-copy">Скопировать заметку</button><button type="button" class="btn" id="memo-clear">Очистить</button></div></div>
+      <div class="memo-g">
+        <label>Провайдер и регион<input id="f-prov" placeholder="Webdock, Denmark"></label>
+        <label>IP-адрес сервера<input id="f-ip" placeholder="185.12.34.56" inputmode="decimal"></label>
+        <label>Имя shell-пользователя<input id="f-user" placeholder="ivan"></label>
+        <label>Домен<input id="f-dom" placeholder="zerno-i-par.ru"></label>
+        <label class="full">Публичный SSH-ключ<textarea id="f-key" placeholder="ssh-ed25519 AAAA… moy-server"></textarea></label>
+        <label>Адрес панели<input id="f-panel" placeholder="claude.zerno-i-par.ru"></label>
+        <label>Логин CloudCLI<input id="f-login" placeholder="ivan"></label>
+        <label>Рабочая папка на сервере<input id="f-ws" value="~/claude-workspace"></label>
+        <label class="check"><input type="checkbox" id="f-a">A-запись указывает на IP сервера</label>
+        <p class="pw">Пароли shell-пользователя и CloudCLI сюда не пишите. Их место в менеджере паролей.</p>
+      </div>
+      <div class="memo-f"><b>Безопасность.</b> Приватный ключ <code>id_ed25519</code> никуда не вставляйте и никому не пересылайте. Данные банковской карты в заметку тоже не записывайте.</div>
+    </form>
+  </div>
+</section>
+
+<!-- 01 -->
+<section class="ch" id="key">
+  <div class="ch-head"><div class="ch-num">01</div><div class="ch-tag">SSH-ключ</div></div>
+  <div class="ch-body">
+    <h2>Ключ вместо пароля</h2>
+    <p class="ch-lede">SSH-ключ состоит из двух половин. Публичную Вы отдадите серверу, приватная останется на Вашем компьютере. Сервер будет пускать только того, у кого есть вторая половина.</p>
+    <p>На Mac откройте Терминал через Spotlight, на Windows найдите в поиске PowerShell. Вставьте команду и нажмите Enter:</p>
+    <div class="cmd"><button class="copy" type="button">Копировать</button><pre>ssh-keygen -t ed25519 -C "moy-server"</pre></div>
+    <p>На вопросы о пути и passphrase отвечайте клавишей Enter: так ключ получится с настройками по умолчанию и без пароля. Если терминал спросит <code>Overwrite? (y/n)</code>, введите <code>n</code>, чтобы не затереть уже существующий ключ.</p>
+    <p>Теперь скопируйте публичную половину. Она начинается со слов <code>ssh-ed25519</code>.</p>
+    <div class="cmd"><button class="copy" type="button">Копировать</button><pre><span class="os">Mac</span>cat ~/.ssh/id_ed25519.pub | pbcopy</pre></div>
+    <div class="cmd"><button class="copy" type="button">Копировать</button><pre><span class="os">Windows · PowerShell</span>Get-Content ~/.ssh/id_ed25519.pub | Set-Clipboard</pre></div>
+    <p>Команда молча кладёт ключ в буфер обмена и ничего не выводит на экран, так и должно быть. Вставьте строку в поле «Публичный SSH-ключ» рабочей заметки.</p>
+    <div class="stamp"><span class="ok"><svg viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg></span><p><span class="lbl">Контрольная точка</span>Публичный ключ записан в заметке. Приватный <code>id_ed25519</code> лежит на Вашем компьютере и больше никуда не идёт.</p></div>
+  </div>
+</section>
+
+<!-- 02 -->
+<section class="ch" id="server">
+  <div class="ch-head"><div class="ch-num">02</div><div class="ch-tag">Сервер и домен</div></div>
+  <div class="ch-body">
+    <h2>Сервер в Дании и адрес для него</h2>
+    <p class="ch-lede">Сервер — это компьютер в дата-центре, который работает круглосуточно. Домен — его постоянное имя, по которому Вы будете открывать панель. Покупать их можно у разных компаний.</p>
+
+    <h3>Заказываем сервер Webdock</h3>
+    <p>Webdock — датский хостинг с собственным дата-центром. Тарифы на официальной странице на 30 сентября 2026 года:</p>
+    <div class="tariffs">
+      <div><b>Essential</b><span>€2,15</span> <small>в месяц</small></div>
+      <div><b>Advanced</b><span>€4,30</span> <small>в месяц</small></div>
+    </div>
+    <p>В обоих тарифах 2 ГБ RAM, 1 vCPU и 15 ГБ NVMe. В Advanced процессор мощнее и включены резервные копии. Перед оплатой сверьте итоговую сумму в панели: цены и условия меняются.</p>
+    <ol class="steps">
+      <li><span>Зарегистрируйтесь на <a href="https://webdock.io/" target="_blank" rel="noopener">webdock.io</a> и нажмите <b>Create Server</b>.</span></li>
+      <li><span>Выберите локацию <b>Denmark</b>, затем <b>Clean OS</b> → <b>Ubuntu 24.04 (Noble)</b>. Все команды этой инструкции проверены именно на этой версии.</span></li>
+      <li><span>Выберите тариф и создайте сервер.</span></li>
+      <li><span>В разделе <b>Shell Users</b> заведите пользователя, например <code>ivan</code>, и убедитесь, что у него есть группа <code>sudo</code>. Задайте пароль и сохраните его в менеджере паролей.</span></li>
+      <li><span>В карточке пользователя нажмите <b>Add Public Key</b>, вставьте ключ из заметки и нажмите <b>Assign Key</b>. Если панель попросит сначала сохранить ключ в аккаунте, сделайте это и затем назначьте его пользователю.</span></li>
+    </ol>
+
+    <h3>Проверяем IP</h3>
+    <p>Скопируйте IP со страницы сервера в заметку и проверьте его в <a href="https://pq.hosting/tools/russia-block-check" target="_blank" rel="noopener">инструменте PQ.Hosting</a>: вставьте адрес и нажмите «Проверить».</p>
+    <ul class="plain">
+      <li><b>«В списках не найден».</b> Всё хорошо, идём дальше.</li>
+      <li><b>Отметка о блокировке или ограниченном диапазоне.</b> Попросите Webdock выдать другой IP и проверьте новый.</li>
+    </ul>
+    <div class="note"><span class="lbl">На полях</span>Проверка не гарантирует, что сервер откроется из любой сети. Не удаляйте сервер, на котором уже есть нужные данные, а перед удалением пустого уточните условия списания денег.</div>
+
+    <h3>Покупаем домен</h3>
+    <ol class="steps">
+      <li><span>Откройте <a href="https://timeweb.com/ru/services/domains/" target="_blank" rel="noopener">Timeweb → Домены</a> и войдите или зарегистрируйтесь. Нужен именно раздел доменов, облачная панель серверов тут ни при чём.</span></li>
+      <li><span>Нажмите «Купить домен». На 30 сентября 2026 года домен <code>.ru</code> стоит 200 ₽ за первый год, продление 399 ₽ в год. Перед оплатой сверьте цену.</span></li>
+      <li><span>Укажите настоящие данные владельца. Для <code>.ru</code> Timeweb требует подтвердить администратора домена через учётную запись Госуслуг (ЕСИА), и данные должны совпадать. Если такой учётной записи нет, заранее спросите у регистратора о вариантах.</span></li>
+      <li><span>Проверьте имя и владельца до оплаты: по правилам Timeweb оплаченную регистрацию нельзя отменить с возвратом денег.</span></li>
+      <li><span>Платный SSL-сертификат, если его предложат, не покупайте. HTTPS позже бесплатно настроит Caddy на сервере.</span></li>
+    </ol>
+    <p>Обычно регистрация занимает несколько минут, изредка до суток. Когда домен появится, откройте «Домены и SSL» → «Мои домены» → Ваш домен → «Поддомены» → «Создать» и назовите поддомен <code>claude</code>. Получится адрес вида <code>claude.ваш-домен.ru</code>.</p>
+
+    <h3>Направляем поддомен на сервер</h3>
+    <p>DNS-записи правят там, чьи NS-серверы обслуживают домен. Если это NS Timeweb, то в Timeweb, если другой провайдер, то у него.</p>
+    <figure>
+      <div class="diagram">
+        <span class="cap">Как адрес находит сервер</span>
+        <div class="flow">
+          <div class="node"><b>Браузер</b><small>claude.zerno-i-par.ru</small></div>
+          <div class="arr"><i></i>запрос</div>
+          <div class="node bl"><b>DNS · запись A</b><small>claude → IPv4 сервера</small></div>
+          <div class="arr"><i></i>IP</div>
+          <div class="node hl"><b>Сервер Webdock</b><small>185.12.34.56</small></div>
+        </div>
+        <div class="flow">
+          <div class="node off"><b>Запись AAAA для claude</b><small>удалить, если есть: здесь только IPv4</small></div>
+        </div>
+      </div>
+      <figcaption><b>Схема 1</b><span>Для поддомена claude нужна одна запись A с IP сервера. Записи основного домена, почты (MX) и других поддоменов не трогайте.</span></figcaption>
+    </figure>
+    <figure>
+      <div class="shot" data-w="960">
+        <div class="ui u-dns" style="width:960px">
+          <div class="top"><b>Домен · <em>claude.zerno-i-par.ru</em></b><span class="u-add"><svg class="i"><use href="#i-plus"/></svg>Добавить запись</span></div>
+          <div class="tabs"><span class="on">Все</span><span>A</span><span>AAAA</span><span>MX</span><span>CNAME</span><span>TXT</span><span>SRV</span></div>
+          <div class="r h"><span></span><span>Тип</span><span>Хост</span><span>Значение</span><span>TTL</span><span></span></div>
+          <div class="r hl"><span class="cb"></span><span class="ty">A</span><span>claude.zerno-i-par.ru</span><span class="ip">185.12.34.56</span><span>600</span><svg class="i" style="color:var(--u-mut)"><use href="#i-pencil"/></svg></div>
+          <div class="r"><span class="cb"></span><span class="ty del">AAAA</span><span class="del">claude.zerno-i-par.ru</span><span class="ip del">2a03:…:1</span><span class="del">600</span><svg class="i" style="color:var(--u-warn)"><use href="#i-trash"/></svg></div>
+        </div>
+      </div>
+      <figcaption><b>Рис. 1</b><span>Так выглядит нужный результат в DNS-редакторе: запись A для claude указывает на IP сервера, запись AAAA удалена. Домен и IP условные.</span></figcaption>
+    </figure>
+    <p>Проверьте работу на <a href="https://www.whatsmydns.net/" target="_blank" rel="noopener">whatsmydns.net</a>: введите <code>claude.ваш-домен.ru</code> и выберите тип <b>A</b>. Как только в результатах появится IP сервера, запишите полный адрес в заметку и отметьте галочку про A-запись. DNS обновляется от нескольких минут до нескольких часов, иногда до суток.</p>
+    <div class="stamp"><span class="ok"><svg viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg></span><p><span class="lbl">Контрольная точка</span>Сервер создан, IP проверен, домен зарегистрирован, запись A поддомена claude указывает на сервер.</p></div>
+  </div>
+</section>
+
+<!-- 03 -->
+<section class="ch" id="ssh">
+  <div class="ch-head"><div class="ch-num">03</div><div class="ch-tag">SSH</div></div>
+  <div class="ch-body">
+    <h2>Первый вход на сервер</h2>
+    <p class="ch-lede">SSH открывает на Вашем компьютере окно, в котором команды выполняются уже на сервере в Европе. Входите под именем shell-пользователя, не под root.</p>
+    <figure>
+      <div class="diagram">
+        <div class="flow">
+          <div class="node"><b>Ваш компьютер</b><small>Терминал или PowerShell</small></div>
+          <div class="arr"><i></i>ssh ivan@IP</div>
+          <div class="node hl"><b>Сервер в Европе</b><small>удалённая командная строка</small></div>
+        </div>
+      </div>
+      <figcaption><b>Схема 2</b><span>Одно окно терминала, два компьютера: до входа команды идут на Ваш, после входа на сервер.</span></figcaption>
+    </figure>
+    <p>Команда ниже собрана из рабочей заметки. Если поля пустые, замените <span style="color:var(--terra)">выделенные</span> части на свои данные и только потом нажмите Enter.</p>
+    <div class="cmd"><button class="copy" type="button">Копировать</button><pre id="ssh-cmd">ssh <span class="fill" data-f="f-user" data-d="ИМЯ_ПОЛЬЗОВАТЕЛЯ">ИМЯ_ПОЛЬЗОВАТЕЛЯ</span>@<span class="fill" data-f="f-ip" data-d="IP_СЕРВЕРА">IP_СЕРВЕРА</span></pre></div>
+    <p>При первом подключении сервер спросит <code>Are you sure you want to continue connecting?</code>. Напечатайте <code>yes</code> и нажмите Enter.</p>
+    <div class="term"><div class="tb"><i></i><i></i><i></i><span>Терминал — ssh</span></div><pre><span class="m">~ $</span> ssh ivan@185.12.34.56
+The authenticity of host '185.12.34.56' can't be established.
+Are you sure you want to continue connecting (yes/no)? <span class="y">yes</span>
+Welcome to Ubuntu 24.04 LTS (Noble)
+<span class="p">ivan@zerno:~$</span> _</pre></div>
+    <p>Если строка приглашения стала похожа на <code>ivan@zerno:~$</code>, Вы на сервере.</p>
+    <div class="note warn"><span class="lbl">Не перепутайте окна</span>Команды в этом окне теперь выполняются на сервере. В любом другом окне терминала — на Вашем компьютере. Выйти с сервера можно командой <code>exit</code>.</div>
+    <p><b>Не пускает?</b> Проверьте IP, имя shell-пользователя и то, что публичный ключ назначен ему в Webdock. Если ошибка не уходит, покажите её текст Claude в обычном чате. Пароль и приватный ключ при этом не отправляйте.</p>
+  </div>
+</section>
+
+<!-- 04 -->
+<section class="ch" id="code">
+  <div class="ch-head"><div class="ch-num">04</div><div class="ch-tag">Claude Code</div></div>
+  <div class="ch-body">
+    <h2>Claude поселяется на сервере</h2>
+    <p class="ch-lede">Claude Code — это Claude, который работает в терминале. Он видит файлы в папке, из которой его запустили, поэтому все проекты будут храниться на сервере.</p>
+    <p>В окне сервера запустите официальный установщик Anthropic. Права sudo ему не нужны.</p>
+    <div class="cmd"><button class="copy" type="button">Копировать</button><pre>curl -fsSL https://claude.ai/install.sh | bash</pre></div>
+    <p>Проверьте, что всё встало:</p>
+    <div class="cmd"><button class="copy" type="button">Копировать</button><pre>claude --version</pre></div>
+    <p>Появился номер версии — установка прошла. Если видите <code>command not found</code>, выйдите командой <code>exit</code>, подключитесь заново и проверьте ещё раз. Если не помогло, откройте <a href="https://code.claude.com/docs/en/troubleshoot-install" target="_blank" rel="noopener">официальное руководство по ошибкам установки</a>.</p>
+
+    <h3>Входим в аккаунт Claude</h3>
+    <p>Сначала создайте отдельную рабочую папку. Запускать Claude из домашней папки, где лежат SSH-ключи, не стоит.</p>
+    <div class="cmd"><button class="copy" type="button">Копировать</button><pre>mkdir -p ~/claude-workspace &amp;&amp; cd ~/claude-workspace</pre></div>
+    <div class="cmd"><button class="copy" type="button">Копировать</button><pre>claude</pre></div>
+    <p>Дальше отвечайте на вопросы в терминале: выбор делается стрелками и клавишей Enter. Если Claude спросит, доверяете ли Вы папке, соглашайтесь только для созданной Вами <code>claude-workspace</code>. Способ входа — <b>Claude account</b>, аккаунт с подпиской Pro или выше.</p>
+    <figure>
+      <div class="diagram">
+        <span class="cap">Вход, когда браузер на сервере не открывается</span>
+        <div class="flow">
+          <div class="node hl"><b>Claude Code на сервере</b><small>показывает ссылку и ждёт код</small></div>
+          <div class="arr"><i></i>ссылка</div>
+          <div class="node"><b>Браузер на компьютере или телефоне</b><small>+ VPN при необходимости</small></div>
+          <div class="arr"><i></i>код</div>
+          <div class="node bl"><b>Login successful</b><small>терминал на сервере</small></div>
+        </div>
+      </div>
+      <figcaption><b>Схема 3</b><span>Ссылка уходит в браузер, код возвращается в терминал.</span></figcaption>
+    </figure>
+    <ol class="steps">
+      <li><span>Скопируйте ссылку из терминала. Если Claude предлагает нажать <kbd>c</kbd>, нажмите, иначе выделите ссылку и скопируйте её обычным способом.</span></li>
+      <li><span>Откройте ссылку в браузере на компьютере или телефоне. Если Claude без VPN не открывается, включите его.</span></li>
+      <li><span>Войдите в аккаунт и скопируйте код подтверждения со страницы.</span></li>
+      <li><span>Если нужно, выключите VPN, вернитесь в окно сервера, вставьте код и дождитесь надписи <code>Login successful</code>.</span></li>
+    </ol>
+
+    <h3>Если выпала ошибка 403</h3>
+    <p>Сама по себе 403 ещё не означает проблему с IPv6. Среди возможных причин Anthropic называет сетевой фильтр или прокси и недоступность Claude Code в регионе. На сервере с IPv6 можно попросить систему предпочитать IPv4:</p>
+    <div class="cmd"><button class="copy" type="button">Копировать</button><pre>echo 'precedence ::ffff:0:0/96  100' | sudo tee -a /etc/gai.conf</pre></div>
+    <ul class="plain">
+      <li><b>Ошибка при установке.</b> Выполните команду в окне сервера и повторите установку.</li>
+      <li><b>Ошибка при входе.</b> Нажмите <kbd>Ctrl</kbd>+<kbd>C</kbd>, выполните команду в том же окне, снова запустите <code>claude</code> и войдите по новой ссылке.</li>
+    </ul>
+    <p>Команда попросит пароль shell-пользователя Webdock, символы при вводе не отображаются. Выполните её один раз: она меняет порядок выбора IP-адресов для всей системы, а собственная строка <code>precedence</code> в Linux заменяет стандартную таблицу приоритетов. Если строка уже добавлена, не повторяйте. Если 403 не уходит, сверьтесь с <a href="https://code.claude.com/docs/en/troubleshoot-install" target="_blank" rel="noopener">официальной диагностикой Anthropic</a>.</p>
+    <div class="stamp"><span class="ok"><svg viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg></span><p><span class="lbl">Контрольная точка</span>Claude Code установлен на сервере и подключён к Вашему аккаунту. Перед следующими шагами убедитесь, что приглашение в терминале серверное.</p></div>
+  </div>
+</section>
+
+<!-- 05 -->
+<section class="ch" id="panel">
+  <div class="ch-head"><div class="ch-num">05</div><div class="ch-tag">CloudCLI и HTTPS</div></div>
+  <div class="ch-body">
+    <h2>Панель в браузере. Настраивает Claude</h2>
+    <p class="ch-lede">CloudCLI превращает Claude Code в веб-панель: чаты, проекты, файлы и терминал открываются в обычном браузере. Всю настройку Вы поручите Claude одним сообщением.</p>
+    <figure>
+      <div class="diagram">
+        <span class="cap">Что соберётся на сервере</span>
+        <div class="flow">
+          <div class="node"><b>Браузер</b><small>телефон или ноутбук</small></div>
+          <div class="arr"><i></i>HTTPS</div>
+          <div class="node bl"><b>Caddy</b><small>TLS-сертификат</small></div>
+          <div class="arr"><i></i>:3001</div>
+          <div class="node hl"><b>CloudCLI</b><small>вход по паролю владельца</small></div>
+          <div class="arr"><i></i></div>
+          <div class="node"><b>Claude Code</b><small>проекты в ~/claude-workspace</small></div>
+        </div>
+        <div class="ports"><span class="cap" style="margin-right:6px">UFW пропускает</span><span class="port">22 SSH</span><span class="port">80 HTTP</span><span class="port">443 HTTPS</span><span class="port x">3001 снаружи</span></div>
+      </div>
+      <figcaption><b>Схема 4</b><span>CloudCLI слушает только внутренний адрес сервера. Caddy принимает HTTPS-запросы к домену и передаёт их панели, а firewall UFW держит открытыми лишь SSH, HTTP и HTTPS.</span></figcaption>
+    </figure>
+    <p>Инструкция проверена на CloudCLI 1.37.3 с Node.js 22 или новее. В этой версии создаётся ровно один аккаунт владельца, после этого регистрация закрывается. Перед стартом ещё раз убедитесь, что запись A для <code>claude.ваш-домен.ru</code> ведёт на IP сервера.</p>
+
+    <h3>5.1 · Задание для Claude</h3>
+    <p>Если Claude Code уже открыт, ничего запускать не нужно. Если видите обычное приглашение вроде <code>ivan@zerno:~$</code>, наберите <code>claude</code> и нажмите Enter. Если приглашение начинается с <code>root@</code>, остановитесь и переподключитесь под shell-пользователем Webdock.</p>
+    <p>Скопируйте текст целиком и отправьте одним сообщением. Менять ничего не нужно: домен Claude спросит сам.</p>
+    <div class="prompt"><div class="ph">Сообщение для Claude Code<button type="button" class="copy-p">Скопировать задание</button></div><pre id="prompt-text">Настрой на этом сервере CloudCLI для Claude Code, HTTPS и firewall. Сначала спроси полный домен панели и дождись моего ответа. Затем:
+
+1. Проверь Node.js: нужна версия 22 или новее. Если её нет, установи Node.js 22 для текущего shell-пользователя.
+2. Установи проверенную версию: npm install -g @cloudcli-ai/cloudcli@1.37.3. Создай папку ~/claude-workspace, если её ещё нет.
+3. Создай systemd-службу cloudcli.service от имени текущего shell-пользователя, не root. Укажи абсолютные пути HOME и WORKSPACES_ROOT=&lt;домашняя-папка&gt;/claude-workspace, а также HOST=127.0.0.1 и SERVER_PORT=3001. Обеспечь автозапуск после перезагрузки и перезапуск при сбое. Проверь, что порт 3001 доступен только локально.
+4. Настрой Caddy: мой домен → 127.0.0.1:3001, автоматический HTTPS. Проверь DNS A. Не отключай TLS и не обходи ошибки сертификата.
+5. Настрой UFW: запрети входящие подключения по умолчанию; разреши только 22, 80 и 443. До включения проверь, что SSH-порт 22 разрешён. Если сомневаешься — остановись и объясни проблему. Не закрывай текущую SSH-сессию, пока доступ не проверен.
+6. Проверь службы, HTTPS и доступность формы первой регистрации. Не открывай порт 3001 наружу. После проверок сообщи адрес https://&lt;домен&gt; и попроси меня создать первый аккаунт. Не считай работу законченной, пока я не подтвержу вход и появление чата.
+
+Не раскрывай приватный SSH-ключ, не удаляй файлы и не меняй настройки, не связанные с этой задачей.</pre></div>
+    <p>По ходу Claude будет спрашивать разрешение на команды. Ожидаемые шаги установки и настройки служб подтверждайте, предварительно прочитав. Если команда удаляет файлы, открывает порт 3001 наружу или трогает посторонние настройки, остановитесь и попросите Claude объяснить, зачем она.</p>
+
+    <h3>5.2 · Пока Claude работает</h3>
+    <p>Не закрывайте терминал и не отправляйте компьютер в сон. Claude поставит Node.js и CloudCLI, создаст службу, настроит Caddy и firewall. Если окно всё-таки закрылось, подключитесь по SSH и выполните:</p>
+    <div class="cmd"><button class="copy" type="button">Копировать</button><pre>claude --continue</pre></div>
+    <p>Когда Claude спросит домен, ответьте полным адресом из заметки, вроде <code>claude.ваш-домен.ru</code>. Когда он закончит проверки, откройте ссылку сразу и не откладывайте создание аккаунта.</p>
+
+    <h3>5.3 · Аккаунт владельца</h3>
+    <p>Откройте <code>https://claude.ваш-домен.ru</code> на телефоне или компьютере. Появится экран <b>Welcome to CloudCLI / Create Account</b>. Придумайте имя пользователя и сильный уникальный пароль, повторите пароль и нажмите <b>Create Account</b>. Сохраните данные в менеджере паролей.</p>
+    <div class="note warn"><span class="lbl">Один владелец</span>Первый созданный аккаунт становится владельцем, и регистрация тут же закрывается. Не оставляйте страницу первой регистрации открытой на потом.</div>
+    <figure>
+      <div class="shot" data-w="1100">
+        <div class="ui u-onb" style="width:1100px">
+          <div class="u-step"><span class="n">1</span><span class="t">Аккаунт владельца</span>
+            <div class="u-card2"><span class="ic"><svg class="i"><use href="#i-chat"/></svg></span><h4>Create Account</h4><p class="sub">Welcome to CloudCLI</p>
+              <div class="f">Username<span>ivan</span></div><div class="f">Password<span>••••••••••••••</span></div><div class="f">Confirm Password<span>••••••••••••••</span></div>
+              <span class="go">Create Account</span></div></div>
+          <div class="u-step"><span class="n">2</span><span class="t">Настройка Git</span>
+            <div class="u-card2"><div class="u-prog"><i class="done">✓</i><s></s><i class="on">2</i><s></s><i>3</i></div><span class="ic"><svg class="i"><use href="#i-git"/></svg></span><h4>Git Configuration</h4><p class="sub">Имя и почта для авторства коммитов</p>
+              <div class="f">Git Name<span>Иван, кофейня «Зерно и пар»</span></div><div class="f">Git Email<span>ivan@zerno-i-par.ru</span></div>
+              <div class="nav"><span>Previous</span><span class="a">Next</span></div></div></div>
+          <div class="u-step"><span class="n">3</span><span class="t">Подключение агентов</span>
+            <div class="u-card2"><div class="u-prog"><i class="done">✓</i><s></s><i class="done">✓</i><s></s><i class="on">3</i></div><h4>Connect Your AI Agents</h4><p class="sub">Подключите только Claude Code</p>
+              <div class="u-ag on"><i style="background:var(--u-acc)"></i><span>Claude Code</span><em>Connected</em></div>
+              <div class="u-ag"><i style="background:#8C8F96"></i><span>Cursor</span><em>Login</em></div>
+              <div class="u-ag"><i style="border:1.5px solid #6D7382;border-radius:50%"></i><span>OpenAI Codex</span><em>Login</em></div>
+              <div class="u-ag"><i style="background:#1E2430"></i><span>OpenCode</span><em>Login</em></div>
+              <div class="nav"><span>Previous</span><span class="g">Complete Setup</span></div></div></div>
+        </div>
+      </div>
+      <figcaption><b>Рис. 2</b><span>Регистрация владельца и два экрана первой настройки CloudCLI. Данные условные.</span></figcaption>
+    </figure>
+    <h3>Если сайт не открылся</h3>
+    <div class="fix">
+      <div><h3>Браузер ушёл в поиск</h3><p>Введите адрес полностью, начиная с <code>https://</code>.</p></div>
+      <div><h3>Домен настроен только что</h3><p>DNS обновляется от нескольких минут до суток. Проверьте запись A ещё раз.</p></div>
+      <div><h3>Ошибка сертификата</h3><p>Не вводите пароль и не обходите предупреждение. Подождите пару минут. Если ошибка осталась, вернитесь в окно сервера и попросите Claude проверить Caddy и домен.</p></div>
+      <div><h3>«Аккаунт уже создан», а Вы его не создавали</h3><p>Не пытайтесь войти. В SSH-сессии временно закройте внешний доступ командой <code>sudo systemctl stop caddy</code> и попросите Claude изучить журналы и выяснить, кто создал аккаунт. Одного сброса пароля мало: сначала нужно исключить чужой доступ.</p></div>
+    </div>
+
+    <h3>5.4 · Первые экраны настройки</h3>
+    <ul class="plain">
+      <li><b>Git Configuration.</b> Укажите имя и почту, которые хотите видеть автором Git-коммитов, и нажмите Next. Они сохраняются в глобальных настройках Git на сервере и сами по себе никуда не уходят, но попадут в метаданные коммитов, если Вы когда-нибудь опубликуете репозиторий.</li>
+      <li><b>Connect Your AI Agents.</b> Нужен только Claude Code. Если он уже отмечен как подключённый, ничего не меняйте. Если написано <i>not authenticated</i> и есть кнопка Login, нажмите её только у Claude Code и завершите вход. Cursor, OpenAI Codex и OpenCode не трогайте. Нажмите <b>Complete Setup</b>.</li>
+    </ul>
+    <p>После этого откроется рабочая панель: слева проекты и разговоры, сверху вкладки чата, терминала и файлов, в центре переписка с Claude. Подробный обход панели — во <a href="https://claude.ai/artifact/KwasqKe2mLTrqnuTgoLuqu" target="_blank" rel="noopener">второй части путеводителя</a>.</p>
+
+    <h3>5.5 · Русский язык</h3>
+    <p>Найдите на правом краю панели небольшой язычок со стрелкой, он открывает <b>Quick Settings</b>. В разделе «Внешний вид» в строке «Язык» выберите «Русский». Тёмная тема по желанию.</p>
+    <figure>
+      <div class="shot" data-w="560">
+        <div class="ui u-qs" style="width:560px;position:relative">
+          <div class="pnl">
+            <h4><svg class="i"><use href="#i-gear"/></svg>БЫСТРЫЕ НАСТРОЙКИ</h4>
+            <span class="sec">ВНЕШНИЙ ВИД</span>
+            <div class="row"><svg class="i"><use href="#i-eye"/></svg><span>Тёмная тема</span><span class="tg"></span></div>
+            <div class="row"><svg class="i"><use href="#i-chat"/></svg><span>Язык</span><span class="sel">Русский <svg class="i" style="width:14px"><use href="#i-cd"/></svg></span></div>
+          </div>
+          <span class="tab"><svg class="i" style="width:14px"><use href="#i-cl"/></svg></span>
+        </div>
+      </div>
+      <figcaption><b>Рис. 3</b><span>Quick Settings: язык интерфейса переключён на русский.</span></figcaption>
+    </figure>
+    <p>На телефоне язычок находится примерно посередине правого края экрана. Если попасть по нему неудобно, смените язык на компьютере. Настройка может запоминаться отдельно в каждом браузере.</p>
+    <div class="stamp"><span class="ok"><svg viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg></span><p><span class="lbl">Контрольная точка</span>Вы вошли в чат CloudCLI с телефона или компьютера. Проекты и файлы в <code>claude-workspace</code> хранятся на сервере, VPN для панели обычно не нужен.</p></div>
+  </div>
+</section>
+
+<!-- 06 -->
+<section class="ch" id="finish">
+  <div class="ch-head"><div class="ch-num">06</div><div class="ch-tag">Финиш</div></div>
+  <div class="ch-body">
+    <h2>Иконка на экране и три правила</h2>
+    <p class="ch-lede">Чтобы панель открывалась как приложение, добавьте её на главный экран телефона.</p>
+    <ul class="plain">
+      <li><b>iPhone, Safari:</b> «Поделиться» → «На экран „Домой“».</li>
+      <li><b>Android, Chrome:</b> меню → «Установить приложение».</li>
+    </ul>
+    <div class="rules">
+      <div><b>Правило 1</b>Сильный уникальный пароль, который хранится в менеджере паролей.</div>
+      <div><b>Правило 2</b>Данные для входа никому не передаются.</div>
+      <div><b>Правило 3</b>UFW и HTTPS остаются включёнными, порт 3001 наружу не открывается.</div>
+    </div>
+    <a class="crosslink" href="https://claude.ai/artifact/KwasqKe2mLTrqnuTgoLuqu" target="_blank" rel="noopener"><span><small>Часть II · дальше</small><b>Экскурсия по панели: проекты, CLAUDE.md, скиллы и настройки</b></span><span class="go">→</span></a>
+  </div>
+</section>
+
+<footer class="colophon">
+  <span><a href="https://github.com/vinograninka/set" target="_blank" rel="noopener">Репозиторий на GitHub ↗</a></span>
+  <span><b>Путеводитель по CloudCLI · часть I</b><br>Установка Claude на собственный сервер в Европе.</span>
+  <span>Цены на 30.09.2026. Примеры и кофейня «Зерно и пар» вымышлены.</span>
+</footer>
+</div>
+
+<script>
+document.documentElement.classList.add('js');
+function fitShots(){
+  document.querySelectorAll('.shot').forEach(function(s){
+    var ui=s.firstElementChild, w=+s.dataset.w||ui.offsetWidth;
+    var sc=Math.min(1, s.clientWidth / w);
+    ui.style.transform='scale('+sc+')';
+    s.style.height=(ui.offsetHeight*sc)+'px';
+  });
+}
+window.addEventListener('resize', fitShots);
+if(document.fonts && document.fonts.ready){ document.fonts.ready.then(fitShots); }
+fitShots();
+
+function copyText(txt, btn, el, label){
+  var done=function(){ btn.textContent='Скопировано'; setTimeout(function(){ btn.textContent=label; },1600); };
+  var fallback=function(){ if(el){ var r=document.createRange(); r.selectNodeContents(el); var s=getSelection(); s.removeAllRanges(); s.addRange(r); } btn.textContent='Выделено, нажмите Ctrl+C'; };
+  try{ navigator.clipboard.writeText(txt).then(done, fallback); }catch(e){ fallback(); }
+}
+document.querySelectorAll('.cmd .copy').forEach(function(b){
+  b.addEventListener('click', function(){
+    var pre=b.parentNode.querySelector('pre'), clone=pre.cloneNode(true);
+    clone.querySelectorAll('.os').forEach(function(o){ o.remove(); });
+    copyText(clone.textContent.trim(), b, pre, 'Копировать');
+  });
+});
+document.querySelector('.copy-p').addEventListener('click', function(e){
+  var pre=document.getElementById('prompt-text'); copyText(pre.textContent, e.currentTarget, pre, 'Скопировать задание');
+});
+
+/* рабочая заметка */
+var KEY='cloudcli-install-memo', ids=['f-prov','f-ip','f-user','f-dom','f-key','f-panel','f-login','f-ws','f-a'];
+function load(){ try{ return JSON.parse(localStorage.getItem(KEY)||'{}'); }catch(e){ return {}; } }
+function save(){ var d={}; ids.forEach(function(id){ var el=document.getElementById(id); d[id]= el.type==='checkbox'? el.checked : el.value; }); try{ localStorage.setItem(KEY, JSON.stringify(d)); }catch(e){} }
+function fill(){
+  document.querySelectorAll('.fill').forEach(function(s){ var v=document.getElementById(s.dataset.f).value.trim(); s.textContent= v || s.dataset.d; });
+}
+(function(){
+  var d=load();
+  ids.forEach(function(id){ var el=document.getElementById(id); if(d[id]!==undefined){ if(el.type==='checkbox') el.checked=!!d[id]; else el.value=d[id]; } el.addEventListener('input', function(){ save(); fill(); }); el.addEventListener('change', save); });
+  var dom=document.getElementById('f-dom'), panel=document.getElementById('f-panel');
+  dom.addEventListener('input', function(){ if(!panel.dataset.touched){ panel.value = dom.value.trim()? 'claude.'+dom.value.trim().replace(/^https?:\/\//,'') : ''; save(); } });
+  panel.addEventListener('input', function(){ panel.dataset.touched='1'; });
+  fill();
+})();
+document.getElementById('memo').addEventListener('submit', function(e){ e.preventDefault(); });
+document.getElementById('memo-copy').addEventListener('click', function(e){
+  var v=function(id){ return document.getElementById(id).value.trim(); };
+  var t=['СЕРВЕР ДЛЯ CLAUDE',
+    'Провайдер / регион: '+v('f-prov'),
+    'IP-адрес сервера: '+v('f-ip'),
+    'Имя shell-пользователя: '+v('f-user'),
+    'Пароль shell-пользователя — в менеджере паролей',
+    '',
+    'Публичный SSH-ключ: '+v('f-key'),
+    'Домен: '+v('f-dom'),
+    'Адрес панели: https://'+v('f-panel'),
+    'A-запись указывает на IP сервера: '+(document.getElementById('f-a').checked?'да':'нет'),
+    '',
+    'CloudCLI, имя пользователя: '+v('f-login'),
+    'CloudCLI, пароль — в менеджере паролей',
+    'Рабочая папка на сервере: '+v('f-ws')].join('\n');
+  copyText(t, e.currentTarget, null, 'Скопировать заметку');
+});
+document.getElementById('memo-clear').addEventListener('click', function(){
+  ids.forEach(function(id){ var el=document.getElementById(id); if(el.type==='checkbox') el.checked=false; else el.value= id==='f-ws'?'~/claude-workspace':''; });
+  delete document.getElementById('f-panel').dataset.touched; save(); fill();
+});
+</script>
+
+</body></html>
